@@ -1,0 +1,16 @@
+**/__pycache__
+*.pyc
+test.py
+mul_exits/
+__pycache__/
+mul_exits/mul_exits.pkl
+.git_backup/
+paper/
+results/
+temp/
+temp_copy/
+logs/
+cache/
+
+models.txt
+vgg16_bn-ucf101-large.pkl

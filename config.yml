@@ -1,0 +1,15 @@
+server: 407
+
+datasets:
+  407:
+    cifar_datasets_root: '/data/wyliang/datasets/CIFAR-100'
+    imagenet_1k_datasets_root: "/data0/zxie/zxie/imagenet1000/val"
+    imagenet_100_datasets_train_root: "/data0/zxie/zxie/IMAGE100/train"
+    imagenet_100_datasets_test_root: "/data0/zxie/zxie/IMAGE100/test"
+    ucf101_datasets_root: "/data0/wyliang/datasets/ucf101/UCF-101-frames/"
+    image_list_dir: "/data0/wyliang/datasets/ucf101/ucfTrainTestlist" 
+  402:
+    ucf101_datasets_root: "/data/wyliang/datasets/ucf101/UCF-101-frames/"
+    image_list_dir: "/data/wyliang/datasets/ucf101/ucfTrainTestlist" 
+
+default_image_size: 224 #256

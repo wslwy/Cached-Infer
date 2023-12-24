@@ -1,0 +1,25 @@
+clients_config:
+  0:
+   id: 0
+   non-iid_rate: 0.7
+   total_class_num: 40
+   base_class_num: 10
+   sample_step: 5 
+  1:
+   id: 1
+   non-iid_rate: 0.7
+   total_class_num: 40
+   base_class_num: 10
+   sample_step: 5 
+  2:
+   id: 2
+   non-iid_rate: 0.7
+   total_class_num: 40
+   base_class_num: 10
+   sample_step: 5 
+  3:
+   id: 3
+   non-iid_rate: 0.7
+   total_class_num: 40
+   base_class_num: 10
+   sample_step: 5 
