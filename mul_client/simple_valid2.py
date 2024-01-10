@@ -13,10 +13,28 @@ import pickle
 import yaml
 
 import copy
+import logging
 
+# 创建 logger 对象
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 创建文件处理器并设置日志级别
+logger_file = "mul_client/logs/mulc_detailed_log.log"
+file_handler = logging.FileHandler(logger_file)
+
+# 将文件处理器添加到 logger
+logger.addHandler(file_handler)
+
+# 重要参数获取与设置
 img_size = 224
-Th = 0.01
+Th = 0.007
 W = 60
+
+# logger 添加注释信息
+logger.info(f"img_size      : {img_size}")
+logger.info(f"Threshold     : {Th}")
+logger.info(f"W             : {W}")
 
 device = "cpu"
 
@@ -149,6 +167,7 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
         total_time += end_time - start_time
     avg_time = total_time / warm_up_epoch
     print(f"warm up avg time: {avg_time * 1000:.3f} ms")
+    logger.info(f"warm up avg time: {avg_time * 1000:.3f} ms")
 
 
 
@@ -263,6 +282,13 @@ if __name__ == "__main__":
     batch_size = W
     cache_size = 101
 
+    # logger 添加注释信息
+    logger.info(f"device        : {device}")
+    logger.info(f"dataset_type  : {dataset_type}")
+    logger.info(f"model_type    : {model_type}")
+    logger.info(f"batch_size    : {batch_size}")
+
+
 
     loaded_model = load_model.load_model(device=device, model_type=model_type, dataset_type=dataset_type)
     # 模型划分
@@ -286,13 +312,21 @@ if __name__ == "__main__":
     client_num = 4
     step = 5
 
-    base = 1
+    base = 3
     num_class_matrix = [
         [base*7] * 10 + [base] * 10 + [base] * 10 + [base] * 10,
         [base] * 10 + [base*7] * 10 + [base] * 10 + [base] * 10,
         [base] * 10 + [base] * 10 + [base*7] * 10 + [base] * 10,
         [base] * 10 + [base] * 10 + [base] * 10 + [base*7] * 10,
     ]
+
+    # logger 添加注释信息
+    logger.info(f"test_batchsize: {test_batch_size}")
+    logger.info(f"client_num    : {client_num}")
+    logger.info(f"step          : {step}")
+    logger.info(f"base          : {base}")
+    logger.info(f"non_iid_degree: {0.7}")
+
 
     dataLoaders = load_data.load_data(test_batch_size=test_batch_size, client_num=4, num_class_matrix=num_class_matrix, step=step)
     for idx, dataloader in enumerate(dataLoaders):
@@ -316,7 +350,10 @@ if __name__ == "__main__":
         [ 3,  5,  7,  9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33],
         list(range(34))
     ]
-    sign_id_list = sign_id_lists[12]
+    sign_id_list = sign_id_lists[11]
+
+    # logger 添加注释信息
+    logger.info(f"sign_id_list : {sign_id_list}")
 
 
     base_sign_idx_list = []
@@ -333,6 +370,10 @@ if __name__ == "__main__":
 
     # 设置客户端 Cache
     cache_size = 40
+
+    # logger 添加注释信息
+    logger.info(f"cache_size    : {cache_size}")
+    
 
     client_caches = list()
     for _ in range(client_num):
@@ -351,18 +392,33 @@ if __name__ == "__main__":
     # cache_add = True
     # cache_update = False
     cache_add = False
+
+    # logger 添加注释信息
+    logger.info(f"cache_update  : {cache_update}")
+    logger.info(f"cache_add     : {cache_add}")
+    
     avg_time_list, correct_list, sample_num_list, correct_ratio_list = cached_infer(sub_models, model_type, global_cache, client_caches, dataLoaders, device, cache_update, cache_add, cache_size)
 
 
     # 保存信息
     save_data = {
-        "cache_update"            : cache_update,
+        "cache_update"      : cache_update,
         "cache_sign_list"   : sign_list,
         "avg_time_list"     : avg_time_list,
-        "correct_list"   : correct_list,
-        "sample_num_list"     : sample_num_list,
+        "correct_list"      : correct_list,
+        "sample_num_list"   : sample_num_list,
         "correct_ratio_list": correct_ratio_list
     }
+
+
+    # logger 添加注释信息
+    logger.info(f"cache_update   : {cache_update}")
+    logger.info(f"cache_sign_list: {sign_list}")
+    logger.info(f"avg_time_list  : {avg_time_list}")
+    logger.info(f"correct_list   : {correct_list}")
+    logger.info(f"sample_num_list: {sample_num_list}")
+    logger.info(f"correct_ratio_list: {correct_ratio_list}")
+    
 
 
     # 保存数据到文件
@@ -372,7 +428,7 @@ if __name__ == "__main__":
     elif model_type == "resnet50":
         file = "results/resnet50_samll_valid_test.pkl"
     elif model_type == "resnet101":
-        file = "mul_client/results/resnet101_4c_up.pkl"
+        file = "mul_client/results/loggered_resnet101_4c_up.pkl"
 
 
     

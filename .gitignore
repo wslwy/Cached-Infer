@@ -10,6 +10,7 @@ results/
 temp/
 temp_copy/
 logs/
+logs_resnet101/
 cache/
 
 models.txt
