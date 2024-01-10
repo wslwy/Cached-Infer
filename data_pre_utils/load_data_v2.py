@@ -16,9 +16,9 @@ import re
 import yaml
 
 
-# 设置随机数种子
-seed_value = 2024
-random.seed(seed_value)
+# # 设置随机数种子
+# seed_value = 2024
+# random.seed(seed_value)
 
 
 # 读取配置文件
@@ -340,7 +340,10 @@ class Ucf101Dataset(Dataset):
         return len(self.image_file_paths)
    
 
-def load_data(dataset='ucf101', img_dir_list_file=None, train_batch_size=64, test_batch_size=256, mode="test", num_per_class=300, num_class=100, step=20):
+def load_data(dataset='ucf101', img_dir_list_file=None, train_batch_size=64, test_batch_size=256, mode="test", num_per_class=300, num_class=100, step=20, seed_value=2024):
+    # seed_value = 2024
+    random.seed(seed_value)
+    
     if dataset == "cifar-100":
         train_dataset, test_dataset = get_cifar_100_dataset()
     elif dataset == 'imagenet-1k':

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 创建文件处理器并设置日志级别
-logger_file = "logs/vgg16_bn_ucf101_simple_test_detail.log"
+logger_file = "logs/detailed_test.log"
 file_handler = logging.FileHandler(logger_file)
 
 # 将文件处理器添加到 logger
@@ -226,8 +226,8 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
             logger.info(f"hit: {hit}, hit_layer: {hit_idx:<2}, y: {y:<3}, pred: {pred.item()}, is_correct: {test_correct}, time: {sample_time * 1000:.3f} ms " + add_str)
 
         # print(f"ts_table: {local_cache.ts_table}")
-        print(f"batch {epc} ended ...")
-        logger.info(f"batch {epc} ended ...")
+        print(f"batch {epc}/{len(data_loader)} ended ...")
+        logger.info(f"batch {epc}/{len(data_loader)} ended ...")
         # if epc == 0:
         #     break
 
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     with open('config.yml', 'r') as config_file:
         config = yaml.safe_load(config_file)
         server = config["server"]
-        img_dir_list_file = os.path.join(config["datasets"][server]["image_list_dir"], "trainlist01.txt")
+        img_dir_list_file = os.path.join(config["datasets"][server]["image_list_dir"], "testlist03.txt")
 
     batch_size = W
     base_cache_size = 100
@@ -270,13 +270,24 @@ if __name__ == "__main__":
     class_num = 50
     num_per_class = 10
 
+
+    # if model_type == "vgg16_bn":
+    #     seed = 5103
+    # elif model_type == "resnet101":
+    #     seed = 2024
+    # else:
+    #     seed = 0
+    seed = 2024
+
     # logger 添加注释信息
+    logger.info(f"img_dir_file  : {img_dir_list_file}")
     logger.info(f"device        : {device}")
     logger.info(f"dataset_type  : {dataset_type}")
     logger.info(f"model_type    : {model_type}")
     logger.info(f"batch_size    : {batch_size}")
     logger.info(f"class_num     : {class_num}")
     logger.info(f"num_per_class : {num_per_class}")
+    logger.info(f"random_seed   : {seed}")
 
 
     loaded_model = load_model.load_model(device=device, model_type=model_type, dataset_type=dataset_type)
@@ -296,7 +307,7 @@ if __name__ == "__main__":
     global_cache = loaded_cache
 
     # 加载测试数据
-    test_loader = load_data.load_data(dataset_type, img_dir_list_file, 64, batch_size, "test", num_per_class, class_num, 5)
+    test_loader = load_data.load_data(dataset_type, img_dir_list_file, 64, batch_size, "test", num_per_class, class_num, 5, seed)
     print(len(test_loader))
     print(len(test_loader.dataset))
 
@@ -326,7 +337,7 @@ if __name__ == "__main__":
 
     # 测试对比两个
     # sign_id_lists = [ sign_id_lists[0], sign_id_lists[8], sign_id_lists[11], sign_id_lists[11] ]
-    # sign_id_lists = [ sign_id_lists[8] ]
+    sign_id_lists = [ sign_id_lists[0] ]
 
 
     # logger 添加注释信息
@@ -392,7 +403,7 @@ if __name__ == "__main__":
 
     # 保存数据到文件
     if model_type == "vgg16_bn":
-        file = "results/vgg16_bn_ucf101_mulcache_test.pkl"
+        file = "results/vgg16_bn_ucf101_mulcache_test_01.pkl"
     elif model_type == "resnet50":
         file = "results/resnet50_samll_valid_test.pkl"
     elif model_type == "resnet101":

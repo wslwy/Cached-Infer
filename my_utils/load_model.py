@@ -42,8 +42,7 @@ def load_model(device="cpu", model_type="vgg16_bn", dataset_type="ucf101"):
         elif model_type == "vgg16_bn":
             loaded_model = models.vgg16_bn()
             loaded_model.classifier[-1] = nn.Linear(loaded_model.classifier[-1].in_features, num_classes)
-            model_file = "/data0/wyliang/model_weights/vgg16_bn_ucf101.pth"
-            # model_file = "/data0/wyliang/model_weights/vgg16_bn_ucf101_01.pth"
+            model_file = model_weights_dir + "/train_vgg16_bn_ucf101.pth"
             state_dict = torch.load(model_file)
             loaded_model.load_state_dict(state_dict)
     
