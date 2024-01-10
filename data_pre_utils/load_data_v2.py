@@ -33,7 +33,7 @@ with open('config.yml', 'r') as config_file:
         imagenet_100_datasets_train_root = config["datasets"][407]["cifar_datasets_root"]
         imagenet_100_datasets_test_root = config["datasets"][407]["cifar_datasets_root"]
         ucf101_datasets_root = config["datasets"][407]["ucf101_datasets_root"]
-    elif server == 402:
+    elif server in [402, 405]:
         ucf101_datasets_root = config["datasets"][402]["ucf101_datasets_root"]
 
 default_image_size = config["default_image_size"]
