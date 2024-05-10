@@ -1,3 +1,7 @@
+"""
+    统计每一层缓存的推理命中率和准确率，应该也是为了motivation作图而画
+"""
+
 import torch
 import torch.nn as nn
 

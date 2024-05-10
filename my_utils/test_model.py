@@ -1,3 +1,7 @@
+"""
+    测试指定模型的推理准确率，没有对时延作出反应
+"""
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -7,7 +11,7 @@ import yaml
 import pickle
 from my_utils.cache import Cache
 import data_pre_utils.load_data_v2 as load_data
-# import  my_utils.load_model as load_model
+import  my_utils.load_model as load_model
 
 # 设置GPU
 # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -105,6 +109,7 @@ def test_list(model_list, test_loader, model_type, device):
     return test_loss / len(test_loader.dataset), correct / len(test_loader.dataset)
     
 
+
 # def test_list(model_list, test_loader, model_type, device):
 #     for sub_model in model_list:
 #         sub_model.eval()
@@ -142,12 +147,12 @@ def test_list(model_list, test_loader, model_type, device):
 if __name__ == "__main__":
     # 加载模型架构并加载权重
     device = "cpu"
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     dataset_type_list = ["imagenet1k", "imagenet-100", "ucf101"]
-    model_type_list = ["vgg16_bn", "resnet50", "resnet101"]
+    model_type_list = ["vgg16_bn", "resnet50", "resnet101", "resnet152"]
     
     dataset_type = dataset_type_list[2]
-    model_type = model_type_list[0]
+    model_type = model_type_list[3]
     
     # 读取配置文件
     with open('config.yml', 'r') as config_file:
@@ -157,7 +162,7 @@ if __name__ == "__main__":
         test_dir_list_file = os.path.join(config["datasets"][server]["image_list_dir"], "testlist01.txt")
 
     # 加载数据集和模型
-    train_loader = load_data.load_data("ucf101", train_dir_list_file, 32, 256, "train", 300, 101, 20)
+    train_loader = load_data.load_data(dataset_type, train_dir_list_file, 64, 60, "test", 10, 50, 5, 2024)
     # test_loader = load_data.load_data(dataset_type, img_dir_list_file, 64, 256, "test", 10, 101, 20)
     # loaded_model = load_model.load_model(device=device, model_type=model_type, dataset_type=dataset_type)
     data_loader = train_loader
@@ -170,18 +175,15 @@ if __name__ == "__main__":
     # print(loaded_model.children())
     # for idx, layer in enumerate(loaded_model.children()):
     #     print(idx, layer)
-    loaded_model = models.vgg16_bn(weights='IMAGENET1K_V1')
     if model_type == "vgg16_bn":
+        loaded_model = models.vgg16_bn(weights='IMAGENET1K_V1')
         num_classes = 101
         loaded_model.classifier[-1] = nn.Linear(loaded_model.classifier[-1].in_features, num_classes)
-
-    # with open("results/vgg16_bn_trained_weights.pkl", "rb") as file:
-    #     ckp = pickle.load(file)
-    # # ckp = torch.load("results/vgg16_bn_trained_weights.pkl")
-    # state_dict = ckp["params"]
-
-    state_dict = torch.load("/data0/wyliang/model_weights/vgg16_bn_ucf101.pth")
-    loaded_model.load_state_dict(state_dict)
+        state_dict = torch.load("/data0/wyliang/model_weights/vgg16_bn_ucf101.pth")
+        loaded_model.load_state_dict(state_dict)
+    elif model_type == "resnet152":
+        loaded_model = load_model.load_model(device, model_type, dataset_type)
+        
     
     print("begin test model ...")
     test_model(loaded_model, data_loader, device)

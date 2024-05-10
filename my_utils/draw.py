@@ -12,7 +12,17 @@ if __name__ == "__main__":
     hit_ratio_list      = loaded_data["hit_ratio_list"]
     correct_ratio_list  = loaded_data["correct_ratio_list"]
 
-    print(loaded_data)
+
+    # for cache_size, avg_time, hit_ratio, correct_ratio in zip(cache_size_list, avg_time_list, hit_ratio_list, correct_ratio_list):
+    #     print(f"{cache_size:<3}, {avg_time:<16.14}, {hit_ratio:<16.14}, {correct_ratio}")
+
+
+    # print
+    for idx, (time, acc) in enumerate(zip(avg_time_list, correct_ratio_list)):
+        print(idx, time, acc)
+
+
+    # print(loaded_data)
     #  绘图
     # 创建图像和轴
     fig, ax1 = plt.subplots()
@@ -48,4 +58,4 @@ if __name__ == "__main__":
     plt.title('relationship between cache size and inference time & hit and correct ratio')
 
     # 保存图形
-    plt.savefig("/home/wyliang/Neurosurgeon/figs/cacheSize_avgTime_hitRatio.png")
+    plt.savefig("/data0/wyliang/Neurosurgeon/figs/cacheSize_avgTime_hitRatio.png")

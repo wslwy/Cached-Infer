@@ -15,9 +15,28 @@ import yaml
 
 import copy
 
+import logging
+
+# 创建 logger 对象
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 创建文件处理器并设置日志级别
+logger_file = "mul_client/logs/detailed_log.log"
+file_handler = logging.FileHandler(logger_file)
+
+# 将文件处理器添加到 logger
+logger.addHandler(file_handler)
+
 img_size = 224
-Th = 0.01
+Th = 0.007
 W = 60
+filter_time = 0.1
+
+# logger 添加注释信息
+logger.info(f"img_size      : {img_size}")
+logger.info(f"Threshold     : {Th}")
+logger.info(f"W             : {W}")
 
 device = "cpu"
 
@@ -51,6 +70,11 @@ ths_75 = {
     29: 1.8,
     33: 1.0
 }
+
+
+logger.info(f"exit_layers_lists : {exit_layers_lists}")
+logger.info(f"ths_75            : {ths_75}")
+
 
 def check_cache(vec, cache_array, scores, weight, id2label):
     # 余弦相似度统计表
@@ -170,6 +194,7 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
     total_time = 0.0
 
     print('warm up ...')
+    logger.info("f{warm up ...}")
     dummy_input = torch.rand(1, 3, img_size, img_size).to(device)
     for _ in range(warm_up_epoch):
         start_time = time.perf_counter()
@@ -179,6 +204,7 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
         total_time += end_time - start_time
     avg_time = total_time / warm_up_epoch
     print(f"warm up avg time: {avg_time * 1000:.3f} ms")
+    logger.info(f"warm up avg time: {avg_time * 1000:.3f} ms")
 
 
 
@@ -192,11 +218,13 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
     iter_signs = [True] * len(data_iters)
     total_times = [0.0] * len(data_iters)
     corrects = [0] * len(data_iters)
+    filtered_nums = [0] * len(data_iters)
     
     o_cache_size = cache_size
     epc = -1
     while work_num:
         epc += 1
+        logger.info(f"batch: {epc:<4} begin:")
         for cnum, (iter_sign, data_iter) in enumerate(zip(iter_signs, data_iters)):
             if iter_sign:
                 # print(cnum, iter_sign)
@@ -209,6 +237,8 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
 
                     cache_size = o_cache_size
                     select_cache(global_cache, client_caches[cnum], cache_size)
+                    logger.info(f"local_cache.labels: {client_caches[cnum].id2label}")
+                    
                     for x, y in zip(data, labels):
                         # print(f"label: {y}")
                         for idx in range(global_cache.cache_size):
@@ -221,7 +251,8 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
                         end_time = time.perf_counter()
 
                         
-                        total_times[cnum] += end_time - start_time
+                        sample_time = end_time - start_time
+                        
 
                         if hit:
                             pred = client_caches[cnum].id2label[res]
@@ -229,10 +260,22 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
                             pred = torch.max(res, 1)[1]
 
                         test_correct = (pred == y).sum()
-                        corrects[cnum] += test_correct.item()
+
+                        if sample_time < filter_time:
+                            total_times[cnum] += sample_time
+                            corrects[cnum] += test_correct.item()
+
+                            add_str = ""
+                        else:
+                            filtered_nums[cnum] += 1
+                            add_str = "### filtered"
+                        
+                        logger.info(f"hit: {hit}, hit_layer: {hit_idx:<2}, y: {y:<3}, pred: {pred.item()}, is_correct: {test_correct}, time: {sample_time * 1000:.3f} ms " + add_str)
+
 
                         # 缓存更新部分
                         if not hit and cache_update:
+                            logger.info(f"cache updated ...")
                             for idx, sign in enumerate(client_caches[cnum].cache_sign_list):
                                 if sign:    # 将缓存更新暂存
                                     client_caches[cnum].up_cache_table[idx][pred] += up_data[idx]
@@ -257,13 +300,14 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
 
                     # print(f"ts_table: {.ts_table}")
                     print(f"client {cnum} batch {epc} cache size {cache_size} ended ...")
+                    logger.info(f"client {cnum} batch {epc} cache size {cache_size} ended ...")
                     # print(f"client {cnum} batch {epc} ended ...")
                 except:
                     iter_signs[cnum] = False
                     work_num -= 1
 
     # 收集指标
-    sample_nums = [len(data_loader.dataset) for data_loader in dataLoaders]
+    sample_nums = [len(data_loader.dataset) - filtered_nums[idx] for idx, data_loader in enumerate(dataLoaders)]
 
     correct_ratios = [float(corrects[cnum]) / sample_nums[cnum] for cnum in range(len(corrects))]
     avg_times = [total_times[cnum] / sample_nums[cnum] * 1000 for cnum in range(len(corrects))]
@@ -271,6 +315,9 @@ def cached_infer(sub_models, model_type, global_cache, client_caches, dataLoader
     for cnum in range(len(corrects)):
         print(f"client: {cnum}, correct/total: {corrects[cnum]}/{sample_nums[cnum]}, accuracy: {correct_ratios[cnum]}")
         print(f"avg inference time: {avg_times[cnum]:.3f} ms")
+
+        logger.info(f"client: {cnum}, correct/total: {corrects[cnum]}/{sample_nums[cnum]}, accuracy: {correct_ratios[cnum]}")
+        logger.info(f"avg inference time: {avg_times[cnum]:.3f} ms")
     
     return avg_times, corrects, sample_nums, correct_ratios
 
@@ -321,7 +368,7 @@ def mule_forward(model_list, model_type, mul_exits, x, y):
 
     res = pred if hit else x
 
-    return hit, res
+    return hit, idx, res
 
 def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
     """ 返回平均推理时延 和 准确率 列表"""
@@ -340,6 +387,7 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
     total_time = 0.0
 
     print('warm up ...')
+    logger.info("f{warm up ...}")
     dummy_input = torch.rand(1, 3, img_size, img_size).to(device)
     for _ in range(warm_up_epoch):
         start_time = time.perf_counter()
@@ -349,6 +397,7 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
         total_time += end_time - start_time
     avg_time = total_time / warm_up_epoch
     print(f"warm up avg time: {avg_time * 1000:.3f} ms")
+    logger.info(f"warm up avg time: {avg_time * 1000:.3f} ms")
 
 
 
@@ -362,10 +411,12 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
     iter_signs = [True] * len(data_iters)
     total_times = [0.0] * len(data_iters)
     corrects = [0] * len(data_iters)
+    filtered_nums = [0] * len(data_iters)
     
     epc = -1
     while work_num:
         epc += 1
+        logger.info(f"batch: {epc:<4} begin:")
         for cnum, (iter_sign, data_iter) in enumerate(zip(iter_signs, data_iters)):
             if iter_sign:
                 # print(cnum, iter_sign)
@@ -380,10 +431,10 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
                         # print(f"label: {y}")
                         x = x.unsqueeze(0)
                         start_time = time.perf_counter()
-                        hit, res = mule_forward(sub_models, model_type, mul_exits, x, y)
+                        hit, hit_idx, res = mule_forward(sub_models, model_type, mul_exits, x, y)
                         end_time = time.perf_counter()
                         
-                        total_times[cnum] += end_time - start_time
+                        sample_time = end_time - start_time
 
                         if hit:
                             pred = res
@@ -391,7 +442,18 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
                             pred = torch.max(res, 1)[1]
 
                         test_correct = (pred == y).sum()
-                        corrects[cnum] += test_correct.item()
+
+                        # filter
+                        if sample_time < filter_time:
+                            total_times[cnum] += sample_time
+                            corrects[cnum] += test_correct.item()
+
+                            add_str = ""
+                        else:
+                            filtered_nums[cnum] += 1
+                            add_str = "### filtered"
+                        
+                        logger.info(f"hit: {hit}, hit_layer: {hit_idx:<2}, y: {y:<3}, pred: {pred.item()}, is_correct: {test_correct}, time: {sample_time * 1000:.3f} ms " + add_str)
 
                     # print(f"ts_table: {.ts_table}")
                     print(f"client {cnum} batch {epc}/{len(dataLoaders[cnum])} exits: {mul_exits.exit_layers} ended ...")
@@ -401,7 +463,7 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
                     work_num -= 1
 
     # 收集指标
-    sample_nums = [len(data_loader.dataset) for data_loader in dataLoaders]
+    sample_nums = [len(data_loader.dataset) - filtered_nums[idx] for idx, data_loader in enumerate(dataLoaders)]
 
     correct_ratios = [float(corrects[cnum]) / sample_nums[cnum] for cnum in range(len(corrects))]
     avg_times = [total_times[cnum] / sample_nums[cnum] * 1000 for cnum in range(len(corrects))]
@@ -410,7 +472,10 @@ def mule_infer(sub_models, model_type, mul_exits, dataLoaders, device):
     for cnum in range(len(corrects)):
         print(f"client: {cnum}, correct/total: {corrects[cnum]}/{sample_nums[cnum]}, accuracy: {correct_ratios[cnum]}")
         print(f"avg inference time: {avg_times[cnum]:.3f} ms")
-    
+
+        logger.info(f"client: {cnum}, correct/total: {corrects[cnum]}/{sample_nums[cnum]}, accuracy: {correct_ratios[cnum]}")
+        logger.info(f"avg inference time: {avg_times[cnum]:.3f} ms")
+
     return avg_times, corrects, sample_nums, correct_ratios
 
 
@@ -431,6 +496,13 @@ if __name__ == "__main__":
 
     batch_size = W
     cache_size = 101
+
+
+    # logger 添加注释信息
+    logger.info(f"device        : {device}")
+    logger.info(f"dataset_type  : {dataset_type}")
+    logger.info(f"model_type    : {model_type}")
+    logger.info(f"batch_size    : {batch_size}")
 
 
     loaded_model = load_model.load_model(device=device, model_type=model_type, dataset_type=dataset_type)
@@ -456,46 +528,74 @@ if __name__ == "__main__":
     step = 5
 
     base = 3
+    non_iid_ratio = 7
     num_class_matrix = [
-        [base*7] * 10 + [base] * 10 + [base] * 10 + [base] * 10,
-        [base] * 10 + [base*7] * 10 + [base] * 10 + [base] * 10,
-        [base] * 10 + [base] * 10 + [base*7] * 10 + [base] * 10,
-        [base] * 10 + [base] * 10 + [base] * 10 + [base*7] * 10,
+        [base*non_iid_ratio] * 10 + [base] * 10 + [base] * 10 + [base] * 10,
+        [base] * 10 + [base*non_iid_ratio] * 10 + [base] * 10 + [base] * 10,
+        [base] * 10 + [base] * 10 + [base*non_iid_ratio] * 10 + [base] * 10,
+        [base] * 10 + [base] * 10 + [base] * 10 + [base*non_iid_ratio] * 10,
     ]
+
+
+    # logger 添加注释信息
+    logger.info(f"test_batch_size   : {test_batch_size}")
+    logger.info(f"client_num        : {client_num}")
+    logger.info(f"step              : {step}")
+    logger.info(f"base              : {base}")
+    logger.info(f"non_iid_ratio     : {non_iid_ratio}")
+
 
     dataLoaders = load_data.load_data(test_batch_size=test_batch_size, client_num=4, num_class_matrix=num_class_matrix, step=step)
     for idx, dataloader in enumerate(dataLoaders):
         print(idx, len(dataloader), len(dataloader.dataset))
+    
+        # logger 添加注释信息
+        logger.info(f"len(data_loader) : {len(dataloader)}")
+        logger.info(f"len(dataset)     : {len(dataloader.dataset)}")
 
     
     save_datas = []
 
-    # 多客户端多出口推理
-    nets_dir = "temp"
-    for exit_layers in exit_layers_lists:
-        print(exit_layers)
-        mul_exits = MulExit(state="global", model_type="resnet101", dataset="ucf101", exit_layers=exit_layers, ths=ths_75)
-        mul_exits.load_init_weights(nets_dir)
+    if False:
+        # 多客户端多出口推理
+        nets_dir = "temp"
+        for exit_layers in exit_layers_lists:
+            print(exit_layers)
+            mul_exits = MulExit(state="global", model_type="resnet101", dataset="ucf101", exit_layers=exit_layers, ths=ths_75)
+            mul_exits.load_init_weights(nets_dir)
 
-        print(f"{mul_exits.exit_layers} test begin ...")
-        avg_times, corrects, sample_nums, correct_ratios = mule_infer(sub_models, model_type, mul_exits, dataLoaders, device)
-        print("test end ...")
+            print(f"{mul_exits.exit_layers} test begin ...")
+            logger.info(f"{mul_exits.exit_layers} test begin ...")
+            avg_times, corrects, sample_nums, correct_ratios = mule_infer(sub_models, model_type, mul_exits, dataLoaders, device)
+            print("test end ...")
+            logger.info("test end ...")
 
-        # 保存
-        save_data = {
-            "flag": "mule",
-            "exit_layers": mul_exits.exit_layers,
-            "ths": mul_exits.exit_ths,
-            "avg_times" : avg_times,
-            "corrects": corrects,
-            "correct_ratios": correct_ratios,
-            "sample_nums": sample_nums
-        }
+            # 保存
+            save_data = {
+                "flag": "mule",
+                "exit_layers": mul_exits.exit_layers,
+                "ths": mul_exits.exit_ths,
+                "avg_times" : avg_times,
+                "corrects": corrects,
+                "correct_ratios": correct_ratios,
+                "sample_nums": sample_nums
+            }
+            
+            # logger 添加注释信息
+            logger.info(f"###########################")
+            logger.info(f"flag          : mule")
+            logger.info(f"exit_layers   : {mul_exits.exit_layers}")
+            logger.info(f"ths           : {mul_exits.exit_ths}")
+            logger.info(f"avg_times     : {avg_times}")
+            logger.info(f"corrects      : {corrects}")
+            logger.info(f"correct_ratios: {correct_ratios}")
+            logger.info(f"sample_nums   : {sample_nums}")
+            logger.info(f"###########################")
 
-        print(save_data)
-        save_datas.append(save_data)
+            print(save_data)
+            save_datas.append(save_data)
 
-    # 多客户端多出口推理 ##
+        # 多客户端多出口推理 ##
 
     # 多客户端缓存推理
     sign_id_lists = [
@@ -515,12 +615,16 @@ if __name__ == "__main__":
         [ 3,  5,  7,  9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33],
         list(range(34))
     ]
-    # sign_id_list = sign_id_lists[12]
+    # sign_id_list = sign_id_lists[11]
+    select_sign_id_lists = [sign_id_lists[0], sign_id_lists[11]]
 
-    # 抽出部分缓存选择
-    select_sign_id_lists = []
-    for number in [0, 8, 10, 11, 12]:
-        select_sign_id_lists.append(sign_id_lists[number])
+    # logger
+    logger.info(f"select_sign_id_lists  : {select_sign_id_lists}")
+
+    # # 抽出部分缓存选择
+    # select_sign_id_lists = []
+    # for number in [0, 8, 10, 11, 12]:
+    #     select_sign_id_lists.append(sign_id_lists[number])
 
     base_sign_idx_list = []
     for idx, x in enumerate(global_cache.cache_sign_list):
@@ -530,6 +634,7 @@ if __name__ == "__main__":
 
     for sign_id_list in select_sign_id_lists:
         # 构造sign_list
+
         sign_list = [0] * len(global_cache.cache_sign_list)
         for idx in sign_id_list:
             sign_list[base_sign_idx_list[idx]] = idx + 1  
@@ -540,6 +645,10 @@ if __name__ == "__main__":
             cache_sizes = [20, 25, 30, 35, 40]
         
         for cache_size in cache_sizes:
+
+            logger.info(f"sign_id_list  : {sign_id_list}")
+            logger.info(f"cache_size    : {cache_size}")
+
             # 创建多客户端本地缓存
             client_caches = list()
             for _ in range(client_num):
@@ -559,9 +668,15 @@ if __name__ == "__main__":
             # cache_add = True
             # cache_update = False
             cache_add = False
+
+            logger.info(f"cache_update  : {cache_update}")
+            logger.info(f"cache_add     : {cache_add}")
+
             print(f"cache_id_list: {sign_id_list}, cache_size: {cache_size} test begin ...")
+            logger.info(f"cache_id_list: {sign_id_list}, cache_size: {cache_size} test begin ...")
             avg_time_list, correct_list, sample_num_list, correct_ratio_list = cached_infer(sub_models, model_type, global_cache, client_caches, dataLoaders, device, cache_update, cache_add, cache_size)
             print("test end ...")
+            logger.info(f"test end ...")
 
             # 保存信息
             save_data = {
@@ -576,6 +691,20 @@ if __name__ == "__main__":
                 "correct_ratio_list": correct_ratio_list
             }
 
+
+            # logger 添加注释信息
+            logger.info(f"###########################")
+            logger.info(f"flag              : cache")
+            logger.info(f"cache_update      : {cache_update}")
+            logger.info(f"cache_add         : {cache_add}")
+            logger.info(f"cache_size        : {cache_size}")
+            logger.info(f"cache_sign_id_list: {sign_id_list}")
+            logger.info(f"avg_time_list     : {avg_time_list}")
+            logger.info(f"correct_list      : {correct_list}")
+            logger.info(f"sample_num_list   : {sample_num_list}")
+            logger.info(f"correct_ratio_list: {correct_ratio_list}")
+            logger.info(f"###########################")
+
             print(save_data)
             save_datas.append(save_data)
 
@@ -583,16 +712,19 @@ if __name__ == "__main__":
     # 保存数据到文件
     if model_type == "vgg16_bn":
         # file = "results/_cache_layer_hits_test2.pkl"
-        file = "results/vgg16_bn_samll_valid_test.pkl"
+        file = "mul_client/results/VGG16_bn_caup_mule_wo_compare.pkl"
     elif model_type == "resnet50":
         file = "results/resnet50_samll_valid_test.pkl"
     elif model_type == "resnet101":
-        file = "mul_client/results/caup_mule_wo_compare.pkl"
+        file = "mul_client/results/resnet101_caup_mule_wo_compare.pkl"
 
 
     
     with open(file, 'wb') as fo:
         pickle.dump(save_datas, fo)
 
+    for save_data in save_datas:
+        logger.info(f"###########################")
+        logger.info(f"details   : {save_data}")
 
     print(len(save_datas))

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 创建文件处理器并设置日志级别
-logger_file = "logs/resnet152_detailed_log.log"
+logger_file = "logs/vgg16_bn_detailed_log.log"
 file_handler = logging.FileHandler(logger_file)
 
 # 将文件处理器添加到 logger
@@ -135,13 +135,13 @@ def train_model(model_type, model, train_loader, test_loader, num_epochs, device
             print(f'Epoch: {epoch + 1}/{num_epochs}, Phase: {phase}, Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.4f}')
             logger.info(f'Epoch: {epoch + 1}/{num_epochs}, Phase: {phase}, Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.4f}')
 
-            # 如果是测试阶段并且当前模型满足目标要求
-            if phase == 'val' and epoch_acc > target_acc:
+            # 如果是训练阶段并且当前模型满足目标要求
+            if phase == 'train' and epoch_acc > target_acc:
                 best_train_epoch = epoch
                 best_train_acc = epoch_acc
                 try:
                     best_train_model_weights = copy.deepcopy(model.state_dict())
-                    torch.save(best_train_model_weights, os.path.join(save_dir, 'train_resnet152_ucf101.pth'))
+                    torch.save(best_train_model_weights, os.path.join(save_dir, 'train_vgg16_bn_ucf101.pth'))
                     print("Best acc {best_train_acc}, Best model saved!")
                     logger.info("Best acc {best_train_acc}, Best model saved!")
                 except Exception as e:
@@ -152,20 +152,20 @@ def train_model(model_type, model, train_loader, test_loader, num_epochs, device
                 stop_flag = True
                 break
 
-            # # 如果是验证阶段并且当前模型性能更好，则保存模型
-            # if phase == 'val' and epoch_acc > best_val_acc:
-            #     best_val_epoch = epoch
-            #     best_val_acc = epoch_acc
-            #     try:
-            #         best_val_model_weights = copy.deepcopy(model.state_dict())
-            #         torch.save(best_val_model_weights, os.path.join(save_dir, 'test_vgg16_bn_ucf101.pth'))
-            #         print("Best acc {best_val_acc}, Best model saved!")
-            #         logger.info("Best acc {best_val_acc}, Best model saved!")
-            #     except Exception as e:
-            #         print(f"Error saving best model: {e}")
-            #         logger.info(f"Error saving best model: {e}")
+            # 如果是验证阶段并且当前模型性能更好，则保存模型
+            if phase == 'val' and epoch_acc > best_val_acc:
+                best_val_epoch = epoch
+                best_val_acc = epoch_acc
+                try:
+                    best_val_model_weights = copy.deepcopy(model.state_dict())
+                    torch.save(best_val_model_weights, os.path.join(save_dir, 'test_vgg16_bn_ucf101.pth'))
+                    print("Best acc {best_val_acc}, Best model saved!")
+                    logger.info("Best acc {best_val_acc}, Best model saved!")
+                except Exception as e:
+                    print(f"Error saving best model: {e}")
+                    logger.info(f"Error saving best model: {e}")
 
-            #     logger.info(f"epoch: {epoch + 1}, phase: {phase}, acc: {epoch_acc}, best_acc: {best_val_acc}\n")
+                logger.info(f"epoch: {epoch + 1}, phase: {phase}, acc: {epoch_acc}, best_acc: {best_val_acc}\n")
 
         if stop_flag:
             break
@@ -175,8 +175,7 @@ def train_model(model_type, model, train_loader, test_loader, num_epochs, device
     # except:
     #     pass
 
-    # return (best_train_epoch, best_train_acc, best_train_model_weights, best_val_epoch, best_val_acc, best_val_model_weights)
-    return (best_train_epoch, best_train_acc, best_train_model_weights)
+    return (best_train_epoch, best_train_acc, best_train_model_weights, best_val_epoch, best_val_acc, best_val_model_weights)
 
 
 if __name__ == "__main__":
@@ -201,13 +200,13 @@ if __name__ == "__main__":
         test_dir_list_file = os.path.join("/data/wyliang/datasets/ucf101/ucfTrainTestlist", "testlist01.txt")
     elif server == 407:
         train_dir_list_file = os.path.join("/data0/wyliang/datasets/ucf101/ucfTrainTestlist", "trainlist01.txt")
-        test_dir_list_file = os.path.join("/data0/wyliang/datasets/ucf101/ucfTrainTestlist", "trainlist01.txt")
+        test_dir_list_file = os.path.join("/data0/wyliang/datasets/ucf101/ucfTrainTestlist", "testlist01.txt")
 
     num_per_class = 300
     num_class = 101
     step = 20
     train_loader = load_data.load_data("ucf101", train_dir_list_file, 32, 256, "train", num_per_class, num_class, step)
-    test_loader = load_data.load_data("ucf101", test_dir_list_file, 64, 32, "test", num_per_class=10, num_class=50, step=5)
+    test_loader = load_data.load_data("ucf101", test_dir_list_file, 64, 32, "test", num_per_class, num_class, step)
 
     # logger 添加注释信息
     logger.info(f"num_per_class : {num_per_class}")
@@ -221,7 +220,7 @@ if __name__ == "__main__":
 
     
     model_type_list = ["vgg16_bn", "resnet50", "resnet101", "resnet152"]
-    model_type = model_type_list[3]
+    model_type = model_type_list[0]
     num_epochs = 100
 
     # logger 添加注释信息
@@ -245,25 +244,29 @@ if __name__ == "__main__":
     #     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    target_acc = 0.85
+    target_acc = 0.82
 
     return_info = train_model(model_type, model, train_loader, test_loader, num_epochs, device, save_dir, target_acc)
-    # best_train_epoch, best_train_acc, best_train_model_weights, best_val_epoch, best_val_acc, best_val_model_weights = return_info
-    best_train_epoch, best_train_acc, best_train_model_weights = return_info
+    best_train_epoch, best_train_acc, best_train_model_weights, best_val_epoch, best_val_acc, best_val_model_weights = return_info
 
     save_data = {
         "best_train_epoch": best_train_epoch,
         "best_train_acc": best_train_acc,
+        "best_val_epoch": best_val_epoch,
+        "best_val_acc": best_val_acc
     }
 
     # logger 添加注释信息
     logger.info(f"best_train_epoch    : {best_train_epoch}")
     logger.info(f"best_train_acc      : {best_train_acc}")
+    logger.info(f"best_val_epoch    : {best_val_epoch}")
+    logger.info(f"best_val_acc      : {best_val_acc}")
 
-    # logger.info(f"best_train_model_weights    : {best_train_model_weights}")
+    logger.info(f"best_train_model_weights    : {best_train_model_weights}")
+    logger.info(f"best_val_model_weights      : {best_val_model_weights}")
 
     # 保存数据到文件
-    file = "results/resnet152_trained_weights.pkl"
+    file = "results/vgg16_bn_trained_weights.pkl"
     with open(file, 'wb') as fo:
         pickle.dump(save_data, fo)
 

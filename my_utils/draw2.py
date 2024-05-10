@@ -33,7 +33,10 @@ if __name__ == "__main__":
     hit_ratios = [x/sample_num for x in hit_time_list]
     accuracy = correct / sample_num
 
-    print(loaded_data)
+    for idx, (hit_ratio, acc) in enumerate(zip(hit_ratios, correct_ratios)):
+        print(f"{idx*2:<2}, {hit_ratio:<20}, {acc}")
+
+    # print(loaded_data)
     # print(hit_ratios, correct_ratios, accuracy)
     # for idx, hit_time in enumerate(hit_times):
     #     print(idx, hit_time)
@@ -108,5 +111,5 @@ if __name__ == "__main__":
         plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet50_layer_hitAndCorrectRatio.png")
         plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet50_layer_hitAndCorrectRatio.pdf")
     elif model_type == "resnet101":
-        plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101_layer_hitAndCorrectRatio.png")
-        plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101_layer_hitAndCorrectRatio.pdf")
+        plt.savefig("/data0/wyliang/Neurosurgeon/figs/resnet101_layer_hitAndCorrectRatio.png")
+        plt.savefig("/data0/wyliang/Neurosurgeon/figs/resnet101_layer_hitAndCorrectRatio.pdf")

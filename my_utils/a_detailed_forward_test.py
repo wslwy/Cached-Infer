@@ -14,6 +14,7 @@ import yaml
 
 import copy
 from collections import defaultdict
+
 import logging
 
 # 创建 logger 对象
@@ -32,7 +33,7 @@ logger.addHandler(file_handler)
 # 重要参数获取与设置
 img_size = 224
 # Th = 0.01
-Th = 0.006
+Th = 0.008
 W = 60
 filter_time = 0.1
 
@@ -95,7 +96,37 @@ def check_cache(vec, cache_array, scores, weight, id2label):
     return hit, max_index
 
 
-def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size):
+# def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size):
+    # """
+    # 根据切分好的模型进行带缓存的推理
+    # """
+    # # print(f"length: {len(cache.cache_table[0])}")
+    # hit = 0
+    # layer_idx = 0
+    # scores = np.zeros(cache_size, dtype=float)
+    # for idx, sub_model in enumerate(model_list):
+    #     if idx == len(model_list) - 1:
+    #         x = torch.flatten(x, 1)
+    #     x = sub_model(x)
+
+    #     if cache.cache_sign_list[idx]:
+    #         vec = gap_layer(x)
+    #         vec = vec.squeeze()
+    #         weight = 1 << layer_idx
+    #         # print(weight, vec)
+    #         hit, pred_id = check_cache(vec, cache.cache_table[idx], scores, weight, cache.id2label)
+    #         if hit:
+    #             x = pred_id
+    #             break
+    #         layer_idx += 1
+
+    # return idx, hit, x
+    # # return layer_idx, hit, x
+
+def update_equation(a, freq_a, sum_b, freq_b):
+    return (a * freq_a + sum_b) / (freq_a + freq_b)
+
+def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size, cache_update):
     """
     根据切分好的模型进行带缓存的推理
     """
@@ -103,6 +134,8 @@ def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size):
     hit = 0
     layer_idx = 0
     scores = np.zeros(cache_size, dtype=float)
+    up_data = dict()
+
     for idx, sub_model in enumerate(model_list):
         if idx == len(model_list) - 1:
             x = torch.flatten(x, 1)
@@ -112,14 +145,18 @@ def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size):
             vec = gap_layer(x)
             vec = vec.squeeze()
             weight = 1 << layer_idx
-            # print(weight, vec)
+            if cache_update:
+                tmp = vec.detach().numpy()
+                tmp = tmp / np.linalg.norm(tmp) 
+                up_data[idx] = tmp
+
             hit, pred_id = check_cache(vec, cache.cache_table[idx], scores, weight, cache.id2label)
             if hit:
                 x = pred_id
                 break
             layer_idx += 1
 
-    return idx, hit, x
+    return idx, hit, x, up_data
     # return layer_idx, hit, x
 
 def select_cache(global_cache, local_cache, cache_size):
@@ -139,8 +176,10 @@ def select_cache(global_cache, local_cache, cache_size):
     # print(local_cache.id2label, local_cache.cache_table)
     return 
 
-def cached_infer(model_list, model_type, global_cache, local_cache, data_loader, device, cache_size):
+def cached_infer(model_list, model_type, global_cache, local_cache, data_loader, device, cache_size, cache_update=False):
     """ 返回平均推理时延 和 准确率"""
+    epc_acc_list = []
+    
     # 初始化
     for sub_model in model_list:
         sub_model.eval()
@@ -160,7 +199,7 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
     dummy_input = torch.rand(1, 3, img_size, img_size).to(device)
     for i in range(warm_up_epoch):
         start_time = time.perf_counter()
-        _ = cached_forward(model_list, model_type, local_cache, global_avg_pooling, dummy_input, cache_size)
+        _ = cached_forward(model_list, model_type, local_cache, global_avg_pooling, dummy_input, cache_size, cache_update)
         end_time = time.perf_counter()
 
         total_time += end_time - start_time
@@ -193,7 +232,7 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
 
             x = x.unsqueeze(0)
             start_time = time.perf_counter()
-            hit_idx, hit, res = cached_forward(model_list, model_type, local_cache, global_avg_pooling, x, cache_size)
+            hit_idx, hit, res, up_data = cached_forward(model_list, model_type, local_cache, global_avg_pooling, x, cache_size, cache_update)
             end_time = time.perf_counter()
 
             sample_time = end_time - start_time
@@ -223,12 +262,34 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
             else:
                 filtered_num += 1
                 add_str = "### filtered"
+            
+            # 缓存更新部分
+            if not hit and cache_update:
+                for idx, sign in enumerate(local_cache.cache_sign_list):
+                    if sign:    # 将缓存更新暂存
+                        local_cache.up_cache_table[idx][pred] += up_data[idx]
+                        local_cache.up_freq_table[idx][pred] += 1
 
             logger.info(f"hit: {hit}, hit_layer: {hit_idx:<2}, y: {y:<3}, pred: {pred.item()}, is_correct: {test_correct}, time: {sample_time * 1000:.3f} ms " + add_str)
 
+        # 将暂存的缓存写入全局缓存
+        for idx, sign in enumerate(local_cache.cache_sign_list):
+            if sign:
+                for label in range(global_cache.cache_size):
+                    if local_cache.up_freq_table[idx][pred]:
+                        global_cache.cache_table[idx][label] = update_equation(global_cache.cache_table[idx][label], global_cache.up_freq_table[idx][label], local_cache.up_cache_table[idx][label], local_cache.up_freq_table[idx][label])
+                        global_cache.up_freq_table[idx][label] += local_cache.up_freq_table[idx][label]
+
+        local_cache.update_table_clear()
+
         # print(f"ts_table: {local_cache.ts_table}")
-        print(f"batch {epc} ended ...")
-        logger.info(f"batch {epc} ended ...")
+
+
+        epc_acc = float(correct) / (W * (epc + 1) - filter_time)
+        epc_acc_list.append(epc_acc)
+
+        print(f"batch {epc}/{len(data_loader)} ended, acc: {epc_acc:<10.8}  ...")
+        logger.info(f"batch {epc}/{len(data_loader)} ended, acc: {epc_acc:<10.8}  ...")
         # if epc == 0:
         #     break
 
@@ -247,7 +308,7 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
 
     print(f"avg inference time: {avg_time * 1000:.3f} ms")
 
-    return avg_time * 1000, correct_ratio, sample_num, (layers_hits, layers_correct, layers_sum_time, correct)
+    return avg_time * 1000, correct_ratio, sample_num, (layers_hits, layers_correct, layers_sum_time, correct, epc_acc_list)
 
 
 if __name__ == "__main__":
@@ -349,9 +410,13 @@ if __name__ == "__main__":
 
     cache_size = 50
     # print(cache_size_list)
+    # cache_update = True
+    cache_update = False
 
     # logger 添加注释信息
     logger.info(f"cache_size       : {cache_size}")
+    logger.info(f"cache_update     : {cache_update}")
+
 
     # 缓存推理
     avg_time_list = []
@@ -366,7 +431,7 @@ if __name__ == "__main__":
             dim = len(global_cache.cache_table[layer][0])
             local_cache.cache_table[layer] = np.zeros((cache_size, dim), dtype=float)
 
-        avg_time, correct_ratio, sample_num, addi_info = cached_infer(sub_models, model_type, global_cache, local_cache, test_loader, device, cache_size)
+        avg_time, correct_ratio, sample_num, addi_info = cached_infer(sub_models, model_type, global_cache, local_cache, test_loader, device, cache_size, cache_update)
         avg_time_list.append(avg_time)
         correct_ratio_list.append(correct_ratio)
 
@@ -379,14 +444,14 @@ if __name__ == "__main__":
 
     # 总结分析性log
     logger.info(f"avg_time: {avg_time_list[0]:.3f}, accuracy: {correct_ratio_list[0]:.6f}, sample_num: {sample_num:<6}, cache_sing_list: {sign_id_lists}")
-    layers_hits, layers_correct, layers_sum_time, total_correct = addi_info
+    layers_hits, layers_correct, layers_sum_time, total_correct, epc_acc_list = addi_info
     for key in layers_hits.keys():
         logger.info(f"layer: {key:<3} :")
         logger.info(f"time/total/ratio: {layers_sum_time[key]/layers_hits[key]:.3f} / {avg_time_list[0]:.3f} / {layers_sum_time[key] / layers_hits[key] / avg_time_list[0]:.6f} ")
         logger.info(f"hits/total/ratio: {layers_hits[key]:<6} / {sample_num:<6} / {float(layers_hits[key]) / sample_num:.6f}")
         logger.info(f"accs/hits /ratio: {layers_correct[key]:<6} / {layers_hits[key]:<6} / {float(layers_correct[key]) / layers_hits[key]:.6f}")
         logger.info(f"corr/total/ratio: {layers_correct[key]:<6} / {total_correct:<6} / {float(layers_correct[key]) / total_correct:.6f}")
-
+        logger.info(f"epc_acc_list: {epc_acc_list}")
     # 保存数据到文件
     if model_type == "vgg16_bn":
         # file = "results/_cache_layer_hits_test2.pkl"

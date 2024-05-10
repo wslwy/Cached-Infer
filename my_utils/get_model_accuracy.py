@@ -1,3 +1,8 @@
+"""
+    # 模拟和统计直接推理的信息,获得数据集模型推理准确率信息
+"""
+
+
 import torch
 import torch.nn as nn
 

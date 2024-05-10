@@ -27,8 +27,8 @@ if __name__ == "__main__":
     correct_ratio_list  = loaded_data["correct_ratio_list"]
 
     # print(loaded_data)
-    for idx, type in enumerate(avg_time_list):
-        print(idx, type)
+    for idx, (avg_time, acc) in enumerate(zip(avg_time_list, correct_ratio_list)):
+        print(f"{idx:<2}, {avg_time:<18}, {acc}")
     for id, x in enumerate(cache_sign_list[8]):
         if x != 0:
             print(id)
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     #     plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101-ucf50-less.png")
     #     plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101-ucf50-less.pdf")
 
-    # # 保存图形
-    # if model_type == "resnet101":
-    #     plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101-ucf50-made.png")
-    #     plt.savefig("/home/wyliang/Neurosurgeon/figs/resnet101-ucf50-made.pdf")
+    # 保存图形
+    if model_type == "resnet101":
+        plt.savefig("/data0/wyliang/Neurosurgeon/figs/resnet101-ucf50-made.png")
+        plt.savefig("/data0/wyliang/Neurosurgeon/figs/resnet101-ucf50-made.pdf")

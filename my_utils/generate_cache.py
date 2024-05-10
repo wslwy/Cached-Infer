@@ -324,11 +324,11 @@ if __name__ == "__main__":
     # # cache.display_info()
 
     # # test_cache(sub_models, data_loader, device, cache, model_type)
-    # test_generate_cache(sub_models, data_loader, device, cache)
+    test_generate_cache(sub_models, data_loader, device, cache)
 
     file = "./" + model_type + "-ucf101-large.pkl"
     print(file)
-    # cache.save(file)
+    cache.save(file)
 
     loaded_cache = cache
     loaded_cache.load(file)

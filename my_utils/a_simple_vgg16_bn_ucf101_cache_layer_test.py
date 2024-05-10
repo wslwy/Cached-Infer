@@ -1,3 +1,6 @@
+"""
+    测试模型选择不同位置的缓存层后的效果 sign_id_list  记载了时延和准确率
+"""
 import torch
 import torch.nn as nn
 
@@ -31,7 +34,7 @@ logger.addHandler(file_handler)
 
 # 重要参数获取与设置
 img_size = 224
-Th = 0.007
+Th = 0.035
 W = 60
 filter_time = 0.1
 
@@ -250,6 +253,7 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
 
 
 if __name__ == "__main__":
+
     # 加载模型并划分
     device = "cpu"
     dataset_type_list = ["imagenet1k", "imagenet-100", "ucf101"]
@@ -335,9 +339,9 @@ if __name__ == "__main__":
         list(range(13))
     ]
 
-    # 测试对比两个
-    # sign_id_lists = [ sign_id_lists[0], sign_id_lists[8], sign_id_lists[11], sign_id_lists[11] ]
-    sign_id_lists = [ sign_id_lists[0] ]
+    # 测试对比两个(比较好的)
+    # sign_id_lists = [ sign_id_lists[10], sign_id_lists[12], sign_id_lists[15], sign_id_lists[11] ]
+    sign_id_lists = [ sign_id_lists[12] ]
 
 
     # logger 添加注释信息
@@ -413,6 +417,8 @@ if __name__ == "__main__":
     
     with open(file, 'wb') as fo:
         pickle.dump(save_data, fo)
+
+    logger.info(f"total_data: \n{save_data}")
 
 
     print(save_data)

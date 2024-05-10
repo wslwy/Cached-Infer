@@ -9,6 +9,8 @@ paper/
 results/
 temp/
 temp_copy/
+
+*.log
 logs/
 logs_resnet101/
 cache/

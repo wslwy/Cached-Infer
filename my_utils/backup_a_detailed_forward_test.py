@@ -1,7 +1,3 @@
-"""
-    测试在指定缓存层退出时的平均推理时延，不知道现在还有没有什么其他作用
-"""
-
 import torch
 import torch.nn as nn
 
@@ -17,10 +13,33 @@ import pickle
 import yaml
 
 import copy
+from collections import defaultdict
+import logging
 
-img_size = 256
-Th = 0.021
+# 创建 logger 对象
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 创建文件处理器并设置日志级别
+logger_file = "logs/detailed_log.log"
+file_handler = logging.FileHandler(logger_file)
+
+# 将文件处理器添加到 logger
+logger.addHandler(file_handler)
+
+
+
+# 重要参数获取与设置
+img_size = 224
+# Th = 0.01
+Th = 0.008
 W = 60
+filter_time = 0.1
+
+# logger 添加注释信息
+logger.info(f"img_size      : {img_size}")
+logger.info(f"Threshold     : {Th}")
+logger.info(f"W             : {W}")
 
 device = "cpu"
 
@@ -76,7 +95,7 @@ def check_cache(vec, cache_array, scores, weight, id2label):
     return hit, max_index
 
 
-def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size, exit_layer):
+def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size):
     """
     根据切分好的模型进行带缓存的推理
     """
@@ -84,19 +103,10 @@ def cached_forward(model_list, model_type, cache, gap_layer, x, cache_size, exit
     hit = 0
     layer_idx = 0
     scores = np.zeros(cache_size, dtype=float)
-
     for idx, sub_model in enumerate(model_list):
         if idx == len(model_list) - 1:
             x = torch.flatten(x, 1)
         x = sub_model(x)
-
-
-        # 测试提前退出节省时延
-        if idx == exit_layer:
-            hit = 1
-            x = 0
-            break
-
 
         if cache.cache_sign_list[idx]:
             vec = gap_layer(x)
@@ -129,7 +139,7 @@ def select_cache(global_cache, local_cache, cache_size):
     # print(local_cache.id2label, local_cache.cache_table)
     return 
 
-def cached_infer(model_list, model_type, global_cache, local_cache, data_loader, device, cache_size, exit_layer):
+def cached_infer(model_list, model_type, global_cache, local_cache, data_loader, device, cache_size):
     """ 返回平均推理时延 和 准确率"""
     # 初始化
     for sub_model in model_list:
@@ -146,33 +156,35 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
     test_loss = 0.0
 
     print('warm up ...')
+    logger.info("f{warm up ...}")
     dummy_input = torch.rand(1, 3, img_size, img_size).to(device)
     for i in range(warm_up_epoch):
         start_time = time.perf_counter()
-        _ = cached_forward(model_list, model_type, local_cache, global_avg_pooling, dummy_input, cache_size, exit_layer)
+        _ = cached_forward(model_list, model_type, local_cache, global_avg_pooling, dummy_input, cache_size)
         end_time = time.perf_counter()
 
         total_time += end_time - start_time
     avg_time = total_time / warm_up_epoch
     print(f"warm up avg time: {avg_time * 1000:.3f} ms")
+    logger.info(f"warm up avg time: {avg_time * 1000:.3f} ms")
 
 
-
-
-    # 将数据加载器转换成迭代器
-    # data_iter = iter(data_loader)
-
-    # 获取一个批次的数据
-    # data, labels = next(data_iter) 
-
+    # 正式推理
     total_time = 0.0
+    layers_hits = defaultdict(int)
+    layers_correct = defaultdict(int)
+    layers_sum_time = defaultdict(float)
+    filtered_num = 0
     
     for epc, (data, labels) in enumerate(data_loader):
+        logger.info(f"batch: {epc:<4} begin:")
 
         data = data.to(device)
         labels = labels.to(device)
 
         select_cache(global_cache, local_cache, cache_size)
+        logger.info(f"local_cache.labels: {local_cache.id2label}")
+
         for x, y in zip(data, labels):
             # print(f"label: {y}")
             for idx in range(global_cache.cache_size):
@@ -181,40 +193,61 @@ def cached_infer(model_list, model_type, global_cache, local_cache, data_loader,
 
             x = x.unsqueeze(0)
             start_time = time.perf_counter()
-            hit_idx, hit, res = cached_forward(model_list, model_type, local_cache, global_avg_pooling, x, cache_size, exit_layer)
+            hit_idx, hit, res = cached_forward(model_list, model_type, local_cache, global_avg_pooling, x, cache_size)
             end_time = time.perf_counter()
 
-            
-            total_time += end_time - start_time
+            sample_time = end_time - start_time
 
             if hit:
                 pred = local_cache.id2label[res]
             else:
-                # loss 部分是否可以删去
-                loss = criterion(res, y.unsqueeze(0))
-                test_loss = test_loss + loss.item()
+                # # loss 部分是否可以删去
+                # loss = criterion(res, y.unsqueeze(0))
+                # test_loss = test_loss + loss.item()
 
                 pred = torch.max(res, 1)[1]
 
-            test_correct = (pred == y).sum()
-            correct = correct + test_correct.item()
-        
+            test_correct = (pred == y).sum().item()
+
+            if sample_time < filter_time:
+                total_time += sample_time
+                correct = correct + test_correct
+
+                # 添加额外详细记录信息
+                if hit:
+                    layers_hits[hit_idx] += 1
+                    layers_correct[hit_idx] += test_correct
+                    layers_sum_time[hit_idx] += sample_time * 1000
+
+                add_str = ""
+            else:
+                filtered_num += 1
+                add_str = "### filtered"
+
+            logger.info(f"hit: {hit}, hit_layer: {hit_idx:<2}, y: {y:<3}, pred: {pred.item()}, is_correct: {test_correct}, time: {sample_time * 1000:.3f} ms " + add_str)
+
         # print(f"ts_table: {local_cache.ts_table}")
         print(f"batch {epc} ended ...")
-    
+        logger.info(f"batch {epc} ended ...")
+        # if epc == 0:
+        #     break
+
+
+    logger.info(f"sample/filter/total: {len(data_loader.dataset) - filtered_num:<5} / {filtered_num:<5} / {len(data_loader.dataset):<5}")
 
     # 收集指标
-    sample_num = len(data_loader.dataset)
+    sample_num = len(data_loader.dataset) - filtered_num
 
     correct_ratio = correct / sample_num
 
-    print('Test_loss: {}, Test correct: {}'.format(test_loss / sample_num, correct_ratio))
+    print('Test correct: {}'.format(test_loss / sample_num, correct_ratio))
     # print('Test_loss: {}, Test correct: {}'.format(test_loss / len(data_loader.dataset), correct / len(data_loader.dataset)))
     print(f"total inference time: {total_time:.3f} s")
     avg_time = total_time / sample_num
 
     print(f"avg inference time: {avg_time * 1000:.3f} ms")
-    return avg_time * 1000, correct_ratio
+
+    return avg_time * 1000, correct_ratio, sample_num, (layers_hits, layers_correct, layers_sum_time, correct)
 
 
 if __name__ == "__main__":
@@ -233,11 +266,19 @@ if __name__ == "__main__":
         img_dir_list_file = os.path.join(config["datasets"][server]["image_list_dir"], "testlist01.txt")
 
     batch_size = W
-    cache_size = 100
+    base_cache_size = 100
 
     class_num = 50
     num_per_class = 10
-    step = 5
+
+    # logger 添加注释信息
+    logger.info(f"device        : {device}")
+    logger.info(f"dataset_type  : {dataset_type}")
+    logger.info(f"model_type    : {model_type}")
+    logger.info(f"batch_size    : {batch_size}")
+    logger.info(f"class_num     : {class_num}")
+    logger.info(f"num_per_class : {num_per_class}")
+
 
     loaded_model = load_model.load_model(device=device, model_type=model_type, dataset_type=dataset_type)
     # 模型划分
@@ -256,9 +297,13 @@ if __name__ == "__main__":
     global_cache = loaded_cache
 
     # 加载测试数据
-    test_loader = load_data.load_data(dataset_type, img_dir_list_file, 64, batch_size, "test", num_per_class, class_num, step)
+    test_loader = load_data.load_data(dataset_type, img_dir_list_file, 64, batch_size, "test", num_per_class, class_num, 5)
     print(len(test_loader))
     print(len(test_loader.dataset))
+
+    # logger 添加注释信息
+    logger.info(f"len(data_loader) : {len(test_loader)}")
+    logger.info(f"len(dataset)     : {len(test_loader.dataset)}")
 
     # 变化 不同缓存层 与准确率，平均推理时间的验证
     sign_id_lists = [
@@ -279,12 +324,20 @@ if __name__ == "__main__":
         list(range(34))
     ]
 
+    # 测试对比两个
+    # sign_id_lists = [ sign_id_lists[0], sign_id_lists[8], sign_id_lists[11], sign_id_lists[12] ]
+    sign_id_lists = [ sign_id_lists[11] ]
+
+
+    # logger 添加注释信息
+    logger.info(f"sign_id_lists    : {sign_id_lists}")
+
     sign_lists = []
     base_sign_idx_list = []
     for idx, x in enumerate(global_cache.cache_sign_list):
         if x == 1:
             base_sign_idx_list.append(idx)
-    print(base_sign_idx_list)
+    # print(base_sign_idx_list)
 
     for sign_id_list in sign_id_lists:
         sign_list = [0] * len(global_cache.cache_sign_list)
@@ -297,49 +350,56 @@ if __name__ == "__main__":
     cache_size = 50
     # print(cache_size_list)
 
+    # logger 添加注释信息
+    logger.info(f"cache_size       : {cache_size}")
+
     # 缓存推理
     avg_time_list = []
     correct_ratio_list = []
+    for idx, sign_list in enumerate(sign_lists):
+        local_cache = Cache(state="local", model_type=model_type, data_set=dataset_type, cache_size=101)
+        local_cache.freq_table = copy.deepcopy(global_cache.freq_table)
+        local_cache.cache_sign_list = sign_list
 
-    sign_list = sign_lists[0]
-    print(sign_list)
-
-    # 似乎不需要重复复制，如果不进行更新的话
-    local_cache = Cache(state="local", model_type=model_type, data_set=dataset_type, cache_size=101)
-    local_cache.freq_table = copy.deepcopy(global_cache.freq_table)
-    local_cache.cache_sign_list = sign_list
-
-
-    exit_layers = list(range(34)) + [36]
-    for exit_layer in exit_layers:
-        print(f"exit layer: {exit_layer}，test start ...")
+        print(f"idx: {idx}, sign list : {sign_id_lists[idx]} test start ...")
         for layer in range(global_cache.cache_layer_num):
             dim = len(global_cache.cache_table[layer][0])
             local_cache.cache_table[layer] = np.zeros((cache_size, dim), dtype=float)
 
-        avg_time, _ = cached_infer(sub_models, model_type, global_cache, local_cache, test_loader, device, cache_size, exit_layer)
+        avg_time, correct_ratio, sample_num, addi_info = cached_infer(sub_models, model_type, global_cache, local_cache, test_loader, device, cache_size)
         avg_time_list.append(avg_time)
+        correct_ratio_list.append(correct_ratio)
 
     # 保存信息
     save_data = {
-            "exit_layers"       : exit_layers,
+            "cache_sign_list"   : sign_lists,
             "avg_time_list"     : avg_time_list,
+            "correct_ratio_list": correct_ratio_list
     }
 
+    # 总结分析性log
+    logger.info(f"avg_time: {avg_time_list[0]:.3f}, accuracy: {correct_ratio_list[0]:.6f}, sample_num: {sample_num:<6}, cache_sing_list: {sign_id_lists}")
+    layers_hits, layers_correct, layers_sum_time, total_correct = addi_info
+    for key in layers_hits.keys():
+        logger.info(f"layer: {key:<3} :")
+        logger.info(f"time/total/ratio: {layers_sum_time[key]/layers_hits[key]:.3f} / {avg_time_list[0]:.3f} / {layers_sum_time[key] / layers_hits[key] / avg_time_list[0]:.6f} ")
+        logger.info(f"hits/total/ratio: {layers_hits[key]:<6} / {sample_num:<6} / {float(layers_hits[key]) / sample_num:.6f}")
+        logger.info(f"accs/hits /ratio: {layers_correct[key]:<6} / {layers_hits[key]:<6} / {float(layers_correct[key]) / layers_hits[key]:.6f}")
+        logger.info(f"corr/total/ratio: {layers_correct[key]:<6} / {total_correct:<6} / {float(layers_correct[key]) / total_correct:.6f}")
 
     # 保存数据到文件
     if model_type == "vgg16_bn":
         # file = "results/_cache_layer_hits_test2.pkl"
-        file = "results/vgg16_bn_ee_test.pkl"
+        file = "results/vgg16_bn_samll_valid_test.pkl"
     elif model_type == "resnet50":
-        file = "results/resnet50_ee_test.pkl"
+        file = "results/resnet50_samll_valid_test.pkl"
     elif model_type == "resnet101":
-        file = "results/resnet101_ee_test2.pkl"
+        file = "results/a_detailed_cache_forward_01.pkl"
 
 
     
-    # with open(file, 'wb') as fo:
-    #     pickle.dump(save_data, fo)
+    with open(file, 'wb') as fo:
+        pickle.dump(save_data, fo)
 
 
     print(save_data)

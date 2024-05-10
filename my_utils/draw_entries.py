@@ -48,7 +48,9 @@ if __name__ == "__main__":
     # x = ["without cache", "1 layer", "4 layers", "16 layers"]
     # x = ["without cache", "1 layer", "2 layers", "4 layers", "8 layers", "16 layers"]
 
-    
+    for idx, (time, acc) in enumerate(zip(draw_avg_time_list), draw_correct_ratio_list):
+        print(idx, time, acc)
+
 
     #  绘图
     # 创建主图和第一个y轴

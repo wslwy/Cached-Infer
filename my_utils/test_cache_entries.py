@@ -1,3 +1,8 @@
+"""
+    变化每层缓存条目数量，得到准确率和推理时延开销，更多应该是为了生成motivation的图而写的代码
+"""
+
+
 import torch
 import torch.nn as nn
 

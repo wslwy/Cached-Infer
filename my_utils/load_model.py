@@ -38,6 +38,7 @@ def load_model(device="cpu", model_type="vgg16_bn", dataset_type="ucf101"):
             loaded_model = network.resnet101(channel=3)
             info_dict = torch.load(os.path.join(model_weights_dir, 'model_best.pth.tar'), map_location=torch.device(device))
             state_dict = info_dict["state_dict"]
+            # torch.save(state_dict, "/data0/wyliang/model_weights/resnet101_ucf101.pth")
             loaded_model.load_state_dict(state_dict)
         elif model_type == "vgg16_bn":
             loaded_model = models.vgg16_bn()
@@ -45,6 +46,14 @@ def load_model(device="cpu", model_type="vgg16_bn", dataset_type="ucf101"):
             model_file = model_weights_dir + "/train_vgg16_bn_ucf101.pth"
             state_dict = torch.load(model_file)
             loaded_model.load_state_dict(state_dict)
+        elif model_type == "resnet152":
+            loaded_model = models.resnet152()
+            loaded_model.fc = nn.Linear(loaded_model.fc.in_features, 101)
+            model_file = model_weights_dir + "/train_resnet152_ucf101.pth"
+            state_dict = torch.load(model_file)
+            loaded_model.load_state_dict(state_dict)
+
+            
     
     loaded_model.to(device)
 

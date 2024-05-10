@@ -1,3 +1,7 @@
+"""
+    把训练好的模型的参数从gpu模式改成CPU模式，以便后续推理使用
+"""
+
 import torch
 import torch.nn as nn
 import torchvision.models as models

@@ -178,7 +178,10 @@ class Ucf101Dataset(Dataset):
         return len(self.image_file_paths)
     
 
-def load_data(dataset_type='ucf101', img_size=224, train_batch_size=64, test_batch_size=256, mode="test", shuffle=True, client_num=0, num_class_matrix=None, step=20):
+def load_data(dataset_type='ucf101', img_size=224, train_batch_size=64, test_batch_size=256, mode="test", shuffle=True, client_num=0, num_class_matrix=None, step=20, seed_value=2024):
+    # seed_value = 2024
+    random.seed(seed_value)
+    
     dataLoaders = list()
 
     if dataset_type=='ucf101':

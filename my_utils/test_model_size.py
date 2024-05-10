@@ -1,3 +1,7 @@
+"""
+    测量获得各种模型的内存占用大小
+"""
+
 import torch
 import torchvision.models as models
 from torchsummary import summary
