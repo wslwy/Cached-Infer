@@ -5,7 +5,10 @@ conda activate lwy-py39-neuro
 conda activate wyliang-py39 
 
 # 设置 python Path 环境变量
+export PYTHONPATH=/data0/wyliang/Neurosurgeon:$PYTHONPATH
 export PYTHONPATH=/home/wyliang/Neurosurgeon:$PYTHONPATH
+export PYTHONPATH=/data/wyliang/Neurosurgeon:$PYTHONPATH
+
 
 # cloud 
 python cloud_api.py -i 127.0.0.1 -p 9999 -d cpu
@@ -14,7 +17,7 @@ python cloud_api.py -i 127.0.0.1 -p 9999 -d cpu
 python edge_api.py -i 127.0.0.1 -p 9999 -d cpu -t alex_net
 
 # push to remote repo
-git push -v origin main
+git push -v origin master
 
 # server
 python server_api.py -i 127.0.0.1 -p 9999 -d cpu -t alex_net
